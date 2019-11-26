@@ -13,12 +13,14 @@ from selenium.webdriver.support.wait import WebDriverWait
 from weibo.items import WeiboItem
 from weibo.secure import weibo_account, weibo_password
 from weibo.settings import project_dir
+from weibo.start_urls import URL_2
+from weibo.utils.to_md5 import get_md5
 
 
 class WeiboUserSpider(scrapy.Spider):
     name = 'weibo_user'
     allowed_domains = ['weibo.com']
-    start_urls = ['https://weibo.com/p/1005052698466184/follow?relate=fans&from=100505&wvr=6&mod=headfans&current=fans#place']
+    start_urls = [URL_2]
 
     custom_settings = {
         "COOKIES_ENABLED": True,
@@ -26,6 +28,9 @@ class WeiboUserSpider(scrapy.Spider):
         "USER_AGENT": "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.169 Safari/537.36",
         "AUTOTHROTTLE_START_DELAY": 5,
         "AUTOTHROTTLE_MAX_DELAY": 60,
+        "ITEM_PIPELINES": {
+            'weibo.pipelines.WeiboPipeline': 300,
+        }
     }
 
     def start_requests(self):
@@ -81,7 +86,7 @@ class WeiboUserSpider(scrapy.Spider):
     count = 1
 
     def _get_next_page(self, text):
-        # 由于被系统限制，每个账号只能查看5页共 70 个粉丝
+        # 由于被系统限制，每个账号只能查看5页粉丝
         if self.count <= 5:
             self.count += 1
             href = re.findall(r'page next.*?href=\\"(.*?)\\"', text)
@@ -105,13 +110,15 @@ class WeiboUserSpider(scrapy.Spider):
         text = response.text
         username_list = re.findall(r'alt=\\"(.*?)\\" src', text)
         follow_c = re.findall(r'关注 <em.*?follow\\" >(\d+)<\\/a><\\/em>', text)
-        article_c = re.findall(r'微博<em.*? href=\\"\\/u\\/\d+\\" >(\d+)<\\/a>', text)
-        href_list = re.findall(r'title=\\".*?\\" href=\\"(\\/u\\/\d+\?refer_flag=.*?)\\" >', text)
+        article_c = re.findall(r'微博<em.*? href=\\".*?\\" >(\d+)<\\/a>', text)
+        href_list = re.findall(r'title=\\".*?\\" href=\\"(.*?\?refer_flag=.*?)\\" >', text)
         for i in range(len(follow_c)):
-            if int(follow_c[i]) < 800 and int(article_c[i]) > 3:
+            if (int(follow_c[i]) < 1000 and int(article_c[i]) > 3) or (int(follow_c[i]) < 100):
                 item = WeiboItem()
                 item["username"] = username_list[i]
                 item['href'] = 'https://weibo.com' + href_list[i].replace('\\/', '/')
+                item['md5_index'] = get_md5(item['href'])
+                item['done'] = False
                 yield item
 
         # self._handle_one_page(text)

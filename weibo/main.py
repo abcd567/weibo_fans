@@ -10,4 +10,5 @@ from scrapy.cmdline import execute
 # 添加工作路径
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-execute(["scrapy", "crawl", "weibo_user"])
+# execute(["scrapy", "crawl", "weibo_user"])
+execute(["scrapy", "crawl", "u_2_follow"])

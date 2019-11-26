@@ -15,11 +15,16 @@ class WeiboPipeline(object):
     def __init__(self):
         self.client = pymongo.MongoClient(host='127.0.0.1', port=27017, connect=False)
         db = self.client["weibo"]
-        self.collection = db["python"]
+        self.collection = db["users_homepage"]
+        self.collection.create_index([("md5_index", 1)], unique=True)
 
     def process_item(self, item, spider):
         content = dict(item)
-        self.collection.insert(content)
+        try:
+            self.collection.insert(content)
+        except Exception as e:
+            print("++++++++++++++++++++++重复数据+++++++++++++++++++++++++++")
+            return item
         print("###################已经存入MongoDB########################")
         return item
 
@@ -28,5 +33,24 @@ class WeiboPipeline(object):
         pass
 
 
+class NewWeiboPipeline(object):
+    def __init__(self):
+        self.client = pymongo.MongoClient(host='127.0.0.1', port=27017, connect=False)
+        db = self.client["weibo"]
+        self.collection = db["real_user"]
+        self.collection.create_index([("md5_index", 1)], unique=True)
 
+    def process_item(self, item, spider):
+        content = dict(item)
+        try:
+            self.collection.insert(content)
+        except Exception as e:
+            print("++++++++++++++++++++++重复数据+++++++++++++++++++++++++++")
+            return item
+        print("###################已经存入MongoDB########################")
+        return item
+
+    def close_spider(self, spider):
+        self.client.close()
+        pass
 
