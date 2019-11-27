@@ -111,3 +111,6 @@ weibo/cookies
 weibo/html_file
 weibo/screenshot
 weibo/secure.py
+
+# test
+weibo/test

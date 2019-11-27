@@ -93,5 +93,8 @@ ROBOTSTXT_OBEY = False
 project_dir = os.path.abspath(os.path.dirname(__file__))
 BASE_DIR = os.path.dirname(os.path.abspath(os.path.dirname(__file__)))
 
-MONGO_URL = 'localhost'
-MONGO_DB = 'maoyan'
+
+MYSQL_HOST = "127.0.0.1"
+MYSQL_DBNAME = "weibo"
+MYSQL_USER = "root"
+MYSQL_PASSWORD = "123456"

@@ -19,6 +19,9 @@ class HandleMongo():
         # 更新一条
         return self.collection.update_one(condition, update)
 
+    def insert_one(self, document):
+        self.collection.insert_one(document)
+
     def __del__(self):
         self.client.close()
 

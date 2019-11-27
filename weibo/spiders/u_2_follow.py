@@ -4,6 +4,11 @@ import pickle
 import os
 
 import re
+from html import unescape
+
+from lxml import etree
+from urllib.parse import urljoin
+
 import scrapy
 import time
 from selenium import webdriver
@@ -13,6 +18,7 @@ from weibo.items import WeiboItem
 from weibo.secure import weibo_account, weibo_password
 from weibo.settings import project_dir
 from weibo.utils.handle_mongo import HandleMongo
+from weibo.utils.js_2_xml_and_unescape import js2xml_unescape
 from weibo.utils.to_md5 import get_md5
 
 
@@ -44,6 +50,7 @@ class U2FollowSpider(scrapy.Spider):
     def start_requests(self):
         """
             判断本地是否存在cookies，存在直接使用cookies登陆,否则selenium模拟登陆
+            注：测试发现weibo cookies有效期只有24小时，24小时后可以删除 weibo.cookie 文件，重新模拟登陆
         """
         cookies = []
         if os.path.exists(project_dir + "/cookies/weibo.cookie"):
@@ -91,7 +98,7 @@ class U2FollowSpider(scrapy.Spider):
 
     def parse(self, response):
         if response.status == 200:
-            results = client.find({'done': False}, limit=2)
+            results = client.find({'done': False}, limit=10)
             if results.count() == 0:
                 # 数据全部处理完了，spider close
                 return
@@ -103,7 +110,7 @@ class U2FollowSpider(scrapy.Spider):
             yield scrapy.Request(url=self.start_urls[0], callback=self.parse, dont_filter=True)
 
     @staticmethod
-    def _get_follow_page(text):
+    def _get_follow_page(data_script):
         # url_list = re.findall(r'<a bpfilter=\\"page_frame\\".*?href=\\"(.*?)\\" >.*?<span.*?关注<\\/span>', text)
         # 曾经运行上行注释代码会出现偶尔会出现在这里卡死的情况
         # 正则: r'<a bpfilter=\\"page_frame\\".*?href=\\"(.*?)\\" >.*?<span.*?关注<\\/span>'
@@ -113,27 +120,35 @@ class U2FollowSpider(scrapy.Spider):
         # if loc is None or loc == _locale.setlocale(_locale.LC_CTYPE):
         #     return p
 
-        url_list = re.findall(r'href=\\"(.*?)\\" ><strong.*?关注', text)
+        # # 这么写没有发现问题
+        # url_list = re.findall(r'href=\\"(.*?)\\" ><strong.*?关注', text)
 
+        # 改用js2xml
+        follow_page = []
+        for d in data_script:
+            if 'FM.view({"ns":"","domid":"Pl_Core_T8CustomTriColumn__3"' in d:
+                selector = js2xml_unescape(d)
+                follow_page = selector.xpath('//table[@class="tb_counter"]//td[1]/a/@href')
         try:
-            return url_list[0].replace('\\/', '/').replace('//', 'https://')
+            return follow_page[0].replace('//', 'https://')
         except Exception as e:
             print(e)
 
     def handle_user_home(self, response):
         if response.status == 200:
-            follow_page = self._get_follow_page(response.text)
+            data_script = response.xpath('//script/text()').extract()
+            follow_page = self._get_follow_page(data_script)
             # 这里先不提取个人信息，待数据量足够多，再写另一个爬虫提取信息
             yield scrapy.Request(url=follow_page, callback=self.get_user)
 
-    def _get_next_page(self, text):
+    def _get_next_page(self, selector):
         # 由于被系统限制，每个账号只能查看5页粉丝
         if self.count <= 5:
             self.count += 1
-            href = re.findall(r'page next.*?href=\\"(.*?)\\"', text)
+            href = selector.xpath('//a[@class="page next S_txt1 S_line1"]/@href')
             if href:
-                href = href[0].replace('\\/', '/')
-                next_url = 'https://weibo.com' + href
+                href = href[0]
+                next_url = urljoin('https://weibo.com', href)
                 return next_url
             # 没有下一页返回0
 
@@ -146,23 +161,31 @@ class U2FollowSpider(scrapy.Spider):
 
     def get_user(self, response):
         if response.status == 200:
-            text = response.text
-            username_list = re.findall(r'alt=\\"(.*?)\\" src', text)
-            follow_c = re.findall(r'关注 <em.*?follow\\" >(\d+)<\\/a><\\/em>', text)
-            fans_c = re.findall(r'粉丝<em.*?\\" >(\d+)<\\/a><\\/em>', text)
-            article_c = re.findall(r'微博<em.*? href=\\".*?\\" >(\d+)<\\/a>', text)
-            href_list = re.findall(r'title=\\".*?\\" href=\\"(.*?\?refer_flag=.*?)\\" >', text)
-            for i in range(len(follow_c)):
-                if int(fans_c[i]) < 3000 and int(follow_c[i]) < 1000 and int(article_c[i]) > 1:
-                    # 粉丝数量少于3000，关注少于1000，微博数大于1条
-                    item = WeiboItem()
-                    item["username"] = username_list[i]
-                    item['href'] = 'https://weibo.com' + href_list[i].replace('\\/', '/')
-                    item['md5_index'] = get_md5(item['href'])
-                    item['done'] = False
-                    # print(item)
-                    yield item
+            data_script = response.xpath('//script/text()').extract()[-1]
+            selector = js2xml_unescape(data_script)
+            nodes = selector.xpath('//li[@class="follow_item S_line2"]')
 
-            next_page_url = self._get_next_page(text)
+            for n in nodes:
+                content = etree.tostring(n, pretty_print=True, encoding='utf8')
+                s = etree.HTML(unescape(content.decode()))
+                username = s.xpath('//li[@class="follow_item S_line2"]//dt/a/@title')[0]
+                href = s.xpath('//li[@class="follow_item S_line2"]//dt/a/@href')[0]
+                follow_c = s.xpath('//span[1]/em[@class="count"]/a/text()')
+                fans_c = s.xpath('//span[2]/em[@class="count"]/a/text()')
+                article_c = s.xpath('//span[3]/em[@class="count"]/a/text()')
+
+                if follow_c and fans_c and article_c:
+                    # 有些公众账号涉及隐私，没有关注粉丝等数据,且不是收集目标,直接排除。
+                    # 如 同性恋婚姻合法化:https://weibo.com/p/1008089993f2f8dc0d7a92bc4a28748d6e8fd0/super_index
+                    if int(fans_c[0]) < 3000 and int(follow_c[0]) < 1000 and int(article_c[0]) > 1:
+                        # 粉丝数量少于3000，关注少于1000，微博数大于1条
+                        item = WeiboItem()
+                        item["username"] = username
+                        item['href'] = urljoin('https://weibo.com', href)
+                        item['md5_index'] = get_md5(item['href'])
+                        item['done'] = False
+                        yield item
+
+            next_page_url = self._get_next_page(selector)
             if next_page_url:
                 yield scrapy.Request(url=next_page_url, callback=self.get_user)
