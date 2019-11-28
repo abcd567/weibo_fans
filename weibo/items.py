@@ -32,6 +32,9 @@ class UserInfoItem(scrapy.Item):
     onick = scrapy.Field()
     oid = scrapy.Field()
     page_id = scrapy.Field()
+    follow_count = scrapy.Field()
+    fans_count = scrapy.Field()
+    blog_count = scrapy.Field()
     realname = scrapy.Field()
     location = scrapy.Field()
     sex = scrapy.Field()
@@ -54,17 +57,19 @@ class UserInfoItem(scrapy.Item):
     def get_insert_sql(self):
         # 执行具体插入
         insert_sql = """
-            insert into user_info(onick, oid, page_id, realname, location, 
+            insert into user_info(onick, oid, page_id, follow_count, fans_count, blog_count, realname, location, 
                                       sex, sex_orient, relationship_status, birthday, blood, blog,
                                       infdomain, brief_introducation, register_time, email, qq, msn,
                                       company, highschool, college, tag)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON DUPLICATE KEY UPDATE onick = VALUES(onick), praise_nums = VALUES(praise_nums), 
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE onick = VALUES(onick), follow_count = VALUES(follow_count), 
+            fans_count = VALUES(fans_count), blog_count = VALUES(blog_count), 
             comment_nums = VALUES(comment_nums)
         """
         # ON DUPLICATE KEY UPDATE fav_nums = VALUES(fav_nums), praise_nums = VALUES(praise_nums), comment_nums = VALUES(comment_nums)
 
-        params = (self['onick'], self['oid'], self['page_id'], self['realname'], self['location'],
+        params = (self['onick'], self['oid'], self['page_id'], self['follow_count'], self['fans_count'],
+                  self['blog_count'], self['realname'], self['location'],
                   self['sex'], self['sex_orient'], self['relationship_status'], self['birthday'], self['blood'],
                   self['blog'], self['infdomain'], self['brief_introducation'], self['register_time'], self['email'],
                   self['qq'], self['msn'], self['company'], self['highschool'], self['college'], self['tag'])

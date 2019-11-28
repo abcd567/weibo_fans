@@ -5,6 +5,7 @@
 # Don't forget to add your pipeline to the ITEM_PIPELINES setting
 # See: https://doc.scrapy.org/en/latest/topics/item-pipeline.html
 import MySQLdb
+import MySQLdb.cursors
 import pymongo
 # from pymongo.collection import Collection
 
@@ -68,13 +69,15 @@ class MysqlTwistedPipeline(object):
     def from_settings(cls, settings):
         """创建连接池"""
         # 从settings 里面提取值
-        dbparms = dict(host=settings['MYSQL_HOST'],
-             db=settings['MYSQL_DBNAME'],
-             user=settings['MYSQL_USER'],
-             password=settings['MYSQL_PASSWORD'],
-             charset="utf8",
-             use_unicode=True,
-             cursorclass=MySQLdb.cursors.DictCursor)
+        dbparms = dict(
+            host=settings['MYSQL_HOST'],
+            db=settings['MYSQL_DBNAME'],
+            user=settings['MYSQL_USER'],
+            password=settings['MYSQL_PASSWORD'],
+            charset="utf8",
+            cursorclass=MySQLdb.cursors.DictCursor,
+            use_unicode=True
+        )
         # 上面dict内的参数名称要和 MySQLdb.connect()里的参数名称要一致
         dbpool = adbapi.ConnectionPool("MySQLdb", **dbparms)
         # 实例化自身

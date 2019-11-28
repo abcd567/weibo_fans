@@ -8,12 +8,14 @@ from lxml import etree
 import js2xml
 
 
-def js2xml_unescape(script, encoding='utf8', debug=False):
+def js2xml_unescape(script_text, encoding='utf8', debug=False):
     """
-    :param script:
+    :param script_text:
+    :param encoding:
+    :param debug:
     :return: selector
     """
-    tree = js2xml.parse(script, encoding=encoding, debug=debug)
+    tree = js2xml.parse(script_text, encoding=encoding, debug=debug)
     script_tree = js2xml.pretty_print(tree)
     # 字符反转义
     script_tree = unescape(script_tree)

@@ -11,4 +11,6 @@ from scrapy.cmdline import execute
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 # execute(["scrapy", "crawl", "weibo_user"])
-execute(["scrapy", "crawl", "u_2_follow"])
+# execute(["scrapy", "crawl", "u_2_follow"])
+execute(["scrapy", "crawl", "get_info"])
+

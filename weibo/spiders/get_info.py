@@ -1,11 +1,23 @@
 # -*- coding: utf-8 -*-
+import os
+
+import pickle
+from html import unescape
+
+from lxml import etree
+
 import scrapy
+import time
+
+from weibo.items import UserInfoItem
+from weibo.secure import mycookie_dict
+from weibo.utils.js_2_xml_and_unescape import js2xml_unescape
 
 
 class GetInfoSpider(scrapy.Spider):
     name = 'get_info'
     allowed_domains = ['weibo.com']
-    start_urls = ['http://weibo.com/']
+    start_urls = ['https://weibo.com/u/2097487075?refer_flag=1005050006_']
 
     custom_settings = {
         "COOKIES_ENABLED": True,
@@ -21,55 +33,196 @@ class GetInfoSpider(scrapy.Spider):
             'weibo.pipelines.MysqlTwistedPipeline': 300,
         }
     }
-    count = 1
 
     def start_requests(self):
         """
-            判断本地是否存在cookies，存在直接使用cookies登陆,否则selenium模拟登陆
+            直接引用cookie_dict,不再在此处模拟登陆
         """
-        cookies = []
-        if os.path.exists(project_dir + "/cookies/weibo.cookie"):
-            cookies = pickle.load(open(project_dir + "/cookies/weibo.cookie", "rb"))
 
-        if not cookies:
-            # 登陆获取cookies
-            option = webdriver.ChromeOptions()
-            option.add_experimental_option('excludeSwitches', ['enable-automation'])
-            browser = webdriver.Chrome(executable_path='I:\\谷歌下载\\chromedriver_win32\\chromedriver.exe', options=option)
-            try:
-                browser.maximize_window()
-                browser.implicitly_wait(5)
-            except:
-                pass
-            browser.get("https://www.weibo.com")
-            if WebDriverWait(browser, 20).until(lambda x: x.find_element_by_xpath('//a[@node-type="loginBtn"]')):
-                browser.implicitly_wait(10)
-                browser.find_element_by_id('loginname').clear()
-                browser.find_element_by_xpath('//input[@id="loginname"]').send_keys(weibo_account)
-                browser.implicitly_wait(1)
-                browser.find_element_by_xpath('//input[@type="password"]').send_keys(weibo_password)
-                browser.implicitly_wait(10)
-                time.sleep(10)
-                # 如果验证码，在下一行加入处理逻辑
-                browser.find_element_by_css_selector('a.W_btn_a.btn_32px').click()
-                time.sleep(10)
-
-                # 如果使用无头浏览器headless，可选择开启可视化
-                # browser.get_screenshot_as_file('screenshot/weibo_homepage.jpg')
-                # txt = browser.page_source
-                # with open('html_file/weibo_homepage.html', 'wb') as f:
-                #     f.write(txt.encode(encoding='utf8'))
-
-                # 登陆成功，获取cookie，并保存
-                cookies = browser.get_cookies()
-                pickle.dump(cookies, open(os.path.join(project_dir, 'cookies\\weibo.cookie'), "wb"))
-
-        # 加载cookies,并使用cookies访问起始url
-        cookie_dict = {}
-        for cookie in cookies:
-            cookie_dict[cookie["name"]] = cookie["value"]
-
-        return [scrapy.Request(url=self.start_urls[0], cookies=cookie_dict, dont_filter=True)]
+        return [scrapy.Request(url=self.start_urls[0], cookies=mycookie_dict, dont_filter=True)]
 
     def parse(self, response):
-        pass
+        script = response.xpath('//script/text()').extract()
+        follow_count, fans_count, blog_count, onick, oid, page_id = '', '', '', '', '', ''
+        for s in script:
+            if 'FM.view({"ns":"","domid":"Pl_Core_T8CustomTriColumn__3"' in s:
+                selector = js2xml_unescape(s)
+                follow_count, fans_count, blog_count = self._selector_count(selector)
+
+            if 'var $CONFIG = {};' in s:
+                selector = js2xml_unescape(s)
+                onick, oid, page_id = self._selector_id(selector)
+
+            if follow_count and oid:
+                break
+
+        if follow_count and fans_count and blog_count and onick and oid and page_id:
+            info_url = 'https://weibo.com/p/' + page_id + '/info?mod=pedit_more'
+            params = {
+                'onick': onick,
+                'oid': int(oid),
+                'page_id': int(page_id),
+                'follow_count': int(follow_count),
+                'fans_count': int(fans_count),
+                'blog_count': int(blog_count)
+            }
+            # 这里要加上cookies, 大概是因为COOKIES_ENABLED不能
+            yield scrapy.Request(url=info_url, meta=params, cookies=mycookie_dict, callback=self.handle_info)
+
+    def handle_info(self, response):
+        item = UserInfoItem()
+        item['onick'] = response.meta.get('onick', '')
+        item['oid'] = response.meta.get('oid', 0)
+        item['page_id'] = response.meta.get('page_id', 0)
+        item['follow_count'] = response.meta.get('follow_count', 0)
+        item['fans_count'] = response.meta.get('fans_count', 0)
+        item['blog_count'] = response.meta.get('blog_count', 0)
+
+        script = response.xpath('//script/text()').extract()
+        for s in script:
+            if 'FM.view({"ns":"","domid":"Pl_Official_PersonalInfo__57"' in s:
+                selector = js2xml_unescape(s)
+                # 日期还没有格式化
+                self._selector_info(selector, item)
+                print(item)
+
+        time.sleep(10)
+
+    @staticmethod
+    def _selector_count(selector):
+        follow_count = selector.xpath('//span[text()="关注"]/preceding-sibling::strong/text()')
+        fans_count = selector.xpath('//span[text()="粉丝"]/preceding-sibling::strong/text()')
+        blog_count = selector.xpath('//span[text()="微博"]/preceding-sibling::strong/text()')
+        try:
+            return follow_count.pop(), fans_count.pop(), blog_count.pop()
+        except Exception as e:
+            print('_selector_count()异常')
+            print(e)
+
+    @staticmethod
+    def _selector_id(selector):
+        onick = selector.xpath('//assign/left//string[text()="onick"]/ancestor::assign/right//string/text()')
+        oid = selector.xpath('//assign/left//string[text()="oid"]/ancestor::assign/right//string/text()')
+        page_id = selector.xpath('//assign/left//string[text()="page_id"]/ancestor::assign/right//string/text()')
+        try:
+            return onick.pop(), oid.pop(), page_id.pop()
+        except Exception as e:
+            print('_selector_id()异常')
+            print(e)
+
+    @staticmethod
+    def _selector_info(selector, item):
+        # 基本信息
+        realname = selector.xpath(
+            '//span[@class="pt_title S_txt2"][text()="真实姓名："]/following-sibling::span/text()')
+        location = selector.xpath(
+            '//span[@class="pt_title S_txt2"][text()="所在地："]/following-sibling::span/text()')
+        sex = selector.xpath('//span[@class="pt_title S_txt2"][text()="性别："]/following-sibling::span/text()')
+        sex_orient = selector.xpath(
+            '//span[@class="pt_title S_txt2"][text()="性取向："]/following-sibling::span/text()')
+        relationship_status = selector.xpath(
+            '//span[@class="pt_title S_txt2"][text()="感情状况："]/following-sibling::span/text()')
+        birthday = selector.xpath(
+            '//span[@class="pt_title S_txt2"][text()="生日："]/following-sibling::span/text()')
+        blood = selector.xpath('//span[@class="pt_title S_txt2"][text()="血型："]/following-sibling::span/text()')
+        blog = selector.xpath('//span[@class="pt_title S_txt2"][text()="博客："]/following-sibling::a/text()')
+        infdomain = selector.xpath(
+            '//span[@class="pt_title S_txt2"][text()="个性域名："]/following-sibling::span/text()')
+        brief_introducation = selector.xpath(
+            '//span[@class="pt_title S_txt2"][text()="简介："]/following-sibling::span/text()')
+        register_time = selector.xpath(
+            '//span[@class="pt_title S_txt2"][text()="注册时间："]/following-sibling::span/text()')
+
+        # 联系信息
+        email = selector.xpath(
+            '//span[@class="pt_title S_txt2"][text()="邮箱："]/following-sibling::span/text()')
+        qq = selector.xpath(
+            '//span[@class="pt_title S_txt2"][text()="QQ："]/following-sibling::span/text()')
+        msn = selector.xpath(
+            '//span[@class="pt_title S_txt2"][text()="MSN："]/following-sibling::span/text()')
+
+        # 工作
+        company_nodes = selector.xpath('//span[@class="pt_title S_txt2"][text()="公司："]/following-sibling::span')
+        company = []
+        for n in company_nodes:
+            content = etree.tostring(n, pretty_print=True, encoding='utf8')
+            txt = unescape(content.decode())
+            s = etree.HTML(txt)
+            company_name = s.xpath('//a/text()')
+            work_detail = s.xpath('//span/text()')
+            string = str(company_name.pop()) + ",".join([str(i) for i in work_detail])
+            string = string.replace('\r\n', '').replace(' ', '')
+            company.append(string)
+        if company:
+            company = " | ".join(company)
+        else:
+            company = ''
+
+        # 高中
+        highschool_nodes = selector.xpath(
+            '//span[@class="pt_title S_txt2"][text()="高中："]/following-sibling::span')
+        highschool = []
+        for n in highschool_nodes:
+            content = etree.tostring(n, pretty_print=True, encoding='utf8')
+            s = etree.HTML(unescape(content.decode()))
+            school_name = s.xpath('//a/text()')
+            study_detail = s.xpath('//span/text()')
+            string = str(school_name.pop()) + ",".join([str(i) for i in study_detail])
+            string = string.replace('\r\n', '').replace(' ', '')
+            highschool.append(string)
+        if highschool:
+            highschool = " | ".join(highschool)
+        else:
+            highschool = ''
+
+        # 大学
+        college_nodes = selector.xpath(
+            '//span[@class="pt_title S_txt2"][text()="大学："]/following-sibling::span')
+        college = []
+        for n in college_nodes:
+            content = etree.tostring(n, pretty_print=True, encoding='utf8')
+            s = etree.HTML(unescape(content.decode()))
+            college_name = s.xpath('//a/text()')
+            study_meta = s.xpath('//span/text()')
+            string = str(college_name.pop()) + ",".join([str(i) for i in study_meta])
+            string = string.replace('\r\n', '').replace(' ', '')
+            college.append(string)
+        if college:
+            college = " | ".join(college)
+        else:
+            college = ""
+
+        # 标签
+        tag_list = selector.xpath(
+            '//span[@class="pt_title S_txt2"][text()="标签："]/following-sibling::span/a/text()')
+        tag = []
+        for t in tag_list:
+            t = t.replace('\r\n', '').replace(' ', '')
+            if t:
+                tag.append(t)
+        if tag:
+            tag = ",".join(tag)
+        else:
+            tag = ""
+
+        item['realname'] = "".join(realname)
+        item['location'] = "".join(location)
+        item['sex'] = "".join(sex)
+        item['sex_orient'] = "".join(sex_orient).replace(' ', '').replace('\r\n', '')
+        item['relationship_status'] = "".join(relationship_status).replace(' ', '').replace('\r\n', '')
+        item['birthday'] = "".join(birthday)
+        item['blood'] = "".join(blood)
+        item['blog'] = "".join(blog)
+        item['infdomain'] = "".join(infdomain)
+        item['brief_introducation'] = "".join(brief_introducation)
+        item['register_time'] = "".join(register_time).replace(' ', '').replace('\r\n', '')
+        item['email'] = "".join(email)
+        item['qq'] = "".join(qq)
+        item['msn'] = "".join(msn)
+        item['company'] = company
+        item['highschool'] = highschool
+        item['college'] = college
+        item['tag'] = tag
+
+
+
