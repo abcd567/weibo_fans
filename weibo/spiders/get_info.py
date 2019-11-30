@@ -11,13 +11,17 @@ import time
 
 from weibo.items import UserInfoItem
 from weibo.secure import mycookie_dict
+from weibo.utils.deal_date import date_format
+from weibo.utils.handle_mongo import HandleMongo
 from weibo.utils.js_2_xml_and_unescape import js2xml_unescape
+
+client = HandleMongo('weibo', 'real_user')
 
 
 class GetInfoSpider(scrapy.Spider):
     name = 'get_info'
     allowed_domains = ['weibo.com']
-    start_urls = ['https://weibo.com/u/2097487075?refer_flag=1005050006_']
+    start_urls = ['https://weibo.com']
 
     custom_settings = {
         "COOKIES_ENABLED": True,
@@ -42,6 +46,18 @@ class GetInfoSpider(scrapy.Spider):
         return [scrapy.Request(url=self.start_urls[0], cookies=mycookie_dict, dont_filter=True)]
 
     def parse(self, response):
+        results = client.find({'done': False}, limit=10)
+        if results.count() == 0:
+            # 数据全部处理完了，spider close
+            return
+        for r in results:
+            user_home = r['href']
+            client.update_one({'href': user_home}, {'$set': {'done': True}})
+            yield scrapy.Request(url=user_home, callback=self.parse_detail)
+        # 一轮数据循环结束,重新调用parse，这里访问的url无意义
+        yield scrapy.Request(url=self.start_urls[0], callback=self.parse, dont_filter=True)
+
+    def parse_detail(self, response):
         script = response.xpath('//script/text()').extract()
         follow_count, fans_count, blog_count, onick, oid, page_id = '', '', '', '', '', ''
         for s in script:
@@ -82,9 +98,9 @@ class GetInfoSpider(scrapy.Spider):
         for s in script:
             if 'FM.view({"ns":"","domid":"Pl_Official_PersonalInfo__57"' in s:
                 selector = js2xml_unescape(s)
-                # 日期还没有格式化
                 self._selector_info(selector, item)
                 print(item)
+                yield item
 
         time.sleep(10)
 
@@ -210,12 +226,14 @@ class GetInfoSpider(scrapy.Spider):
         item['sex'] = "".join(sex)
         item['sex_orient'] = "".join(sex_orient).replace(' ', '').replace('\r\n', '')
         item['relationship_status'] = "".join(relationship_status).replace(' ', '').replace('\r\n', '')
-        item['birthday'] = "".join(birthday)
+        birthday = "".join(birthday)
+        item['birthday'] = date_format(birthday)
         item['blood'] = "".join(blood)
         item['blog'] = "".join(blog)
         item['infdomain'] = "".join(infdomain)
         item['brief_introducation'] = "".join(brief_introducation)
-        item['register_time'] = "".join(register_time).replace(' ', '').replace('\r\n', '')
+        register_time = "".join(register_time).replace(' ', '').replace('\r\n', '')
+        item['register_time'] = date_format(register_time)
         item['email'] = "".join(email)
         item['qq'] = "".join(qq)
         item['msn'] = "".join(msn)

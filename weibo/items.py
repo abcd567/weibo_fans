@@ -63,8 +63,7 @@ class UserInfoItem(scrapy.Item):
                                       company, highschool, college, tag)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON DUPLICATE KEY UPDATE onick = VALUES(onick), follow_count = VALUES(follow_count), 
-            fans_count = VALUES(fans_count), blog_count = VALUES(blog_count), 
-            comment_nums = VALUES(comment_nums)
+            fans_count = VALUES(fans_count), blog_count = VALUES(blog_count)
         """
         # ON DUPLICATE KEY UPDATE fav_nums = VALUES(fav_nums), praise_nums = VALUES(praise_nums), comment_nums = VALUES(comment_nums)
 

@@ -27,7 +27,7 @@ class HandleMongo():
 
 
 if __name__ == '__main__':
-    mon = HandleMongo('weibo', 'users_homepage')
+    mon = HandleMongo('weibo', 'real_user')
 
     # results = mon.find({'done': True})
     # if results.count() == 0:
