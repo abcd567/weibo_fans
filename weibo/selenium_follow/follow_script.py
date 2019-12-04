@@ -61,7 +61,7 @@ def analyse_data(cursor, data):
     return url, onick, oid
 
 
-def follow_user(user_url, user_name, oid):
+def follow_user(count, user_url, user_name, oid):
     browser.get(user_url)
     try:
         if WebDriverWait(browser, 20).until(
@@ -69,6 +69,8 @@ def follow_user(user_url, user_name, oid):
             browser.find_element_by_xpath('//div[contains(@class, "shadow ")]//a[@action-type="follow"]').click()
             sign(cursor, oid)
             print("关注>>>>>>>", user_name)
+            count += 1
+            return count
     except Exception as e:
         sign(cursor, oid, followed=0)
         print(e, '<<<<<<<<<', user_name)
@@ -103,14 +105,17 @@ def create_db_cursor():
 if __name__ == '__main__':
     browser = create_browser()
     conn, cursor = create_db_cursor()
-
+    count = 0
     login_weibo(browser)
     res = get_data_from_mysql(cursor)
     while res:
         for r in res:
             url, name, oid = analyse_data(cursor, r)
             if url:
-                follow_user(url, name,oid)
+                count = follow_user(count, url, name, oid)
+                if count == 200:
+                    # 一个账号一天只能关注200个用户
+                    break
         res = get_data_from_mysql(cursor)
 
     print("ok")
