@@ -10,6 +10,8 @@
 #     https://doc.scrapy.org/en/latest/topics/spider-middleware.html
 import os
 
+import sys
+
 BOT_NAME = 'weibo'
 
 SPIDER_MODULES = ['weibo.spiders']
@@ -92,6 +94,8 @@ ROBOTSTXT_OBEY = False
 
 project_dir = os.path.abspath(os.path.dirname(__file__))
 BASE_DIR = os.path.dirname(os.path.abspath(os.path.dirname(__file__)))
+sys.path.insert(0, os.path.join(BASE_DIR, 'weibo'))
+# sys.path.append('E:\\scrapyProject\\weibo\\weibo\\utils\\')
 
 
 MYSQL_HOST = "127.0.0.1"

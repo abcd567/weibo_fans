@@ -27,7 +27,7 @@ class HandleMongo():
 
 
 if __name__ == '__main__':
-    mon = HandleMongo('weibo', 'real_user')
+    mon = HandleMongo('weibo', 'may_know')
 
     # results = mon.find({'done': True})
     # if results.count() == 0:
@@ -40,8 +40,15 @@ if __name__ == '__main__':
         #     break
 
     # # 测试完毕，改回去
-    results = mon.find({'done': True})
-    for r in results:
-        stat = mon.update_one({'username': r['username']}, {'$set': {'done': False}})
-        if stat.modified_count:
-            print(">>>>>>>>>>>>>>>>修改成功")
+    results = mon.find({'done': True}, limit=100)
+    print(results.count())
+    # for r in results:
+    #     print(r)
+    while results.count():
+        print(results.count())
+        for r in results:
+            stat = mon.update_one({'md5_index': r['md5_index']}, {'$set': {'done': False}})
+            if stat.modified_count:
+                print(">>>>>>>>>>>>>>>>修改成功")
+        results = mon.find({'done': True}, limit=100)
+    print('stop')

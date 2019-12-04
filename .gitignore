@@ -114,3 +114,5 @@ weibo/secure.py
 
 # test
 weibo/test
+
+setup.py

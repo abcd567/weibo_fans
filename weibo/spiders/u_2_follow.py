@@ -22,7 +22,7 @@ from weibo.utils.js_2_xml_and_unescape import js2xml_unescape
 from weibo.utils.to_md5 import get_md5
 
 
-client = HandleMongo('weibo', 'users_homepage')
+client = HandleMongo('weibo', 'may_know')
 
 
 class U2FollowSpider(scrapy.Spider):
@@ -39,6 +39,9 @@ class U2FollowSpider(scrapy.Spider):
         "AUTOTHROTTLE_MAX_DELAY": 10,
         "AUTOTHROTTLE_TARGET_CONCURRENCY ": 10,
         "DOWNLOAD_TIMEOUT": 15,
+
+        'MONGO_DB': 'weibo',
+        'MONGO_COLLECTION': 'may_know',
 
         "ITEM_PIPELINES": {
             'weibo.pipelines.NewWeiboPipeline': 300,
@@ -104,7 +107,8 @@ class U2FollowSpider(scrapy.Spider):
                 return
             for r in results:
                 user_home = r['href']
-                client.update_one({'href': user_home}, {'$set': {'done': True}})
+                # md5算法问题，同一个主页，低概率出现多个md5索引，所以选择用唯一索引更新，防止意外
+                client.update_one({'md5_index': r['md5_index']}, {'$set': {'done': True}})
                 yield scrapy.Request(url=user_home, callback=self.handle_user_home)
             # 一轮数据循环结束,重新调用parse，这里访问的url无意义
             yield scrapy.Request(url=self.start_urls[0], callback=self.parse, dont_filter=True)
@@ -161,31 +165,33 @@ class U2FollowSpider(scrapy.Spider):
 
     def get_user(self, response):
         if response.status == 200:
-            data_script = response.xpath('//script/text()').extract()[-1]
-            selector = js2xml_unescape(data_script)
-            nodes = selector.xpath('//li[@class="follow_item S_line2"]')
+            data_script = response.xpath('//script/text()').extract()
+            for s in data_script:
+                if 'FM.view({"ns":"pl.content.followTab.index"' in s:
+                    selector = js2xml_unescape(s)
+                    nodes = selector.xpath('//li[@class="follow_item S_line2"]')
 
-            for n in nodes:
-                content = etree.tostring(n, pretty_print=True, encoding='utf8')
-                s = etree.HTML(unescape(content.decode()))
-                username = s.xpath('//li[@class="follow_item S_line2"]//dt/a/@title')[0]
-                href = s.xpath('//li[@class="follow_item S_line2"]//dt/a/@href')[0]
-                follow_c = s.xpath('//span[1]/em[@class="count"]/a/text()')
-                fans_c = s.xpath('//span[2]/em[@class="count"]/a/text()')
-                article_c = s.xpath('//span[3]/em[@class="count"]/a/text()')
+                    for n in nodes:
+                        content = etree.tostring(n, pretty_print=True, encoding='utf8')
+                        s = etree.HTML(unescape(content.decode()))
+                        username = s.xpath('//li[@class="follow_item S_line2"]//dt/a/@title')[0]
+                        href = s.xpath('//li[@class="follow_item S_line2"]//dt/a/@href')[0]
+                        follow_c = s.xpath('//span[1]/em[@class="count"]/a/text()')
+                        fans_c = s.xpath('//span[2]/em[@class="count"]/a/text()')
+                        article_c = s.xpath('//span[3]/em[@class="count"]/a/text()')
 
-                if follow_c and fans_c and article_c:
-                    # 有些公众账号涉及隐私，没有关注粉丝等数据,且不是收集目标,直接排除。
-                    # 如 同性恋婚姻合法化:https://weibo.com/p/1008089993f2f8dc0d7a92bc4a28748d6e8fd0/super_index
-                    if int(fans_c[0]) < 3000 and int(follow_c[0]) < 1000 and int(article_c[0]) > 1:
-                        # 粉丝数量少于3000，关注少于1000，微博数大于1条
-                        item = WeiboItem()
-                        item["username"] = username
-                        item['href'] = urljoin('https://weibo.com', href)
-                        item['md5_index'] = get_md5(item['href'])
-                        item['done'] = False
-                        yield item
+                        if follow_c and fans_c and article_c:
+                            # 有些公众账号涉及隐私，没有关注粉丝等数据,且不是收集目标,直接排除。
+                            # 如 同性恋婚姻合法化:https://weibo.com/p/1008089993f2f8dc0d7a92bc4a28748d6e8fd0/super_index
+                            if int(fans_c[0]) < 3000 and int(follow_c[0]) < 1000 and int(article_c[0]) > 1:
+                                # 粉丝数量少于3000，关注少于1000，微博数大于1条
+                                item = WeiboItem()
+                                item["username"] = username
+                                item['href'] = urljoin('https://weibo.com', href)
+                                item['md5_index'] = get_md5(item['href'])
+                                item['done'] = False
+                                yield item
 
-            next_page_url = self._get_next_page(selector)
-            if next_page_url:
-                yield scrapy.Request(url=next_page_url, callback=self.get_user)
+                    next_page_url = self._get_next_page(selector)
+                    if next_page_url:
+                        yield scrapy.Request(url=next_page_url, callback=self.get_user)

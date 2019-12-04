@@ -38,11 +38,24 @@ class WeiboPipeline(object):
 
 
 class NewWeiboPipeline(object):
-    def __init__(self):
-        self.client = pymongo.MongoClient(host='127.0.0.1', port=27017, connect=False)
-        db = self.client["weibo"]
-        self.collection = db["real_user"]
+    def __init__(self, host, port, db, col):
+        self.client = pymongo.MongoClient(host=host, port=port, connect=False)
+        db = self.client[db]
+        self.collection = db[col]
         self.collection.create_index([("md5_index", 1)], unique=True)
+
+    @classmethod
+    def from_settings(cls, settings):
+        """创建连接池"""
+        # 从settings 里面提取值
+        dbparms = dict(
+            host='127.0.0.1',
+            port=27017,
+            db=settings['MONGO_DB'],
+            col=settings['MONGO_COLLECTION']
+        )
+
+        return cls(**dbparms)
 
     def process_item(self, item, spider):
         content = dict(item)

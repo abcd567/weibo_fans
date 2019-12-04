@@ -15,7 +15,7 @@ from weibo.utils.deal_date import date_format
 from weibo.utils.handle_mongo import HandleMongo
 from weibo.utils.js_2_xml_and_unescape import js2xml_unescape
 
-client = HandleMongo('weibo', 'real_user')
+client = HandleMongo('weibo', 'may_know')
 
 
 class GetInfoSpider(scrapy.Spider):
@@ -28,10 +28,11 @@ class GetInfoSpider(scrapy.Spider):
         "COOKIES_DUBUG": True,
         "USER_AGENT": "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.169 Safari/537.36",
         "AUTOTHROTTLE_ENABLED": True,
-        "AUTOTHROTTLE_START_DELAY": 3,
+        "AUTOTHROTTLE_START_DELAY": 1,
         "AUTOTHROTTLE_MAX_DELAY": 10,
-        "AUTOTHROTTLE_TARGET_CONCURRENCY ": 10,
+        "AUTOTHROTTLE_TARGET_CONCURRENCY ": 20,
         "DOWNLOAD_TIMEOUT": 15,
+        "CONCURRENT_REQUESTS": 32,
 
         "ITEM_PIPELINES": {
             'weibo.pipelines.MysqlTwistedPipeline': 300,
@@ -46,13 +47,15 @@ class GetInfoSpider(scrapy.Spider):
         return [scrapy.Request(url=self.start_urls[0], cookies=mycookie_dict, dont_filter=True)]
 
     def parse(self, response):
-        results = client.find({'done': False}, limit=10)
+        # results = client.find({'done': False}, limit=10)
+        results = client.find({'username': False}, limit=10)
+
         if results.count() == 0:
             # 数据全部处理完了，spider close
             return
         for r in results:
             user_home = r['href']
-            client.update_one({'href': user_home}, {'$set': {'done': True}})
+            client.update_one({'md5_index': r['md5_index']}, {'$set': {'done': True}})
             yield scrapy.Request(url=user_home, callback=self.parse_detail)
         # 一轮数据循环结束,重新调用parse，这里访问的url无意义
         yield scrapy.Request(url=self.start_urls[0], callback=self.parse, dont_filter=True)
