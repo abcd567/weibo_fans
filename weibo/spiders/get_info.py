@@ -47,8 +47,7 @@ class GetInfoSpider(scrapy.Spider):
         return [scrapy.Request(url=self.start_urls[0], cookies=mycookie_dict, dont_filter=True)]
 
     def parse(self, response):
-        # results = client.find({'done': False}, limit=10)
-        results = client.find({'username': False}, limit=10)
+        results = client.find({'done': False}, limit=10)
 
         if results.count() == 0:
             # 数据全部处理完了，spider close
